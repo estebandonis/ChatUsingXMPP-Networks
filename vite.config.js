@@ -6,5 +6,7 @@ export default defineConfig({
   plugins: [react()],
   define: {
     global: {},
+    'global.WebSocket': 'window.WebSocket', // Ensure WebSocket is available globally
+    'global.btoa': 'window.btoa.bind(window)', // Ensure btoa is available globally
   }
 })

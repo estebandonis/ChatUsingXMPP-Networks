@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import './App.css'
-
-import { client, xml } from '@xmpp/client'
+import { client } from '@xmpp/client'
 
 function App() {
 
@@ -11,23 +10,19 @@ function App() {
       domain: 'alumchat.lol',
       username: 'don21610',
       password: 'admin123',
-      resource: '',
-      tlsOptions: {
-        rejectUnauthorized: false
-      },
     })
 
     xmpp.on('error', err => {
       console.error(err)
     })
 
-    xmpp.on('offline', () => {
-      console.log('offline')
-    })
+    xmpp.on('error', (err) => {
+      console.error('XMPP Error:', err);
+    });
 
-    xmpp.on('online', () => {
-      console.log('online')
-    })
+    xmpp.on('status', (status) => {
+      console.log('XMPP Status:', status);
+    });
 
     xmpp.start().catch(console.error)
 
