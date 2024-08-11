@@ -7,12 +7,14 @@ const XMPPChat = () => {
     const [xmpp, setXmpp] = useState(null);
     const [contacts, setContacts] = useState([]);
     const [status, setStatus] = useState('offline');
+    const [user, setUser] = useState('don21610');
+    const [password, setPassword] = useState('admin123');
 
     useEffect(() => {
         const xmppClient = client({
             service: 'ws://alumchat.lol:7070/ws/',
             domain: 'alumchat.lol',
-            username: 'don21610',
+            username: user,
             password: 'admin123',
         });
 
@@ -21,17 +23,21 @@ const XMPPChat = () => {
             setStatus('online');
 
             // Set up message handler
-            xmppClient.on('stanza', (stanza) => {
+            xmppClient.on('stanza', async (stanza) => {
                 if (stanza.is('message') && stanza.getChild('body')) {
-                    const from = stanza.attr('from');
-                    const body = stanza.attr('body');
-                    setMessages((prevMessages) => [...prevMessages, { from, body }]);
+                    const { from, body } = stanza.attrs;
+
+                    console.log('Incoming message:', from, body);
+                    // const from = stanza.attr('from');
+                    // const body = stanza.attr('body');
+                    // setMessages((prevMessages) => [...prevMessages, { from, body }]);
                 }
 
                 // Handle presence stanzas
                 if (stanza.is('presence')) {
                     const from = stanza.attr('from');
                     const type = stanza.attr('type') || 'available';
+                    console.log('Presence:', from, type);
                     updateContactStatus(from, type);
                 }
             });
@@ -94,7 +100,9 @@ const XMPPChat = () => {
             let presenceStanza;
             if (status === 'offline') {
                 presenceStanza = xml('presence', { type: 'unavailable' });
-            } else {
+            } else if (status === 'online') {
+                presenceStanza = xml('presence');
+            }else {
                 presenceStanza = xml('presence', {}, xml('show', {}, status));
             }
             xmpp.send(presenceStanza);
@@ -128,9 +136,10 @@ const XMPPChat = () => {
                 />
                 <button type="submit">Send</button>
 
-                <button onClick={() => setPresence('available')}>Available</button>
+                <button onClick={() => setPresence('online')}>Available</button>
                 <button onClick={() => setPresence('away')}>Away</button>
                 <button onClick={() => setPresence('dnd')}>Do Not Disturb</button>
+                <button onClick={() => setPresence('xa')}>Extended Away</button>
                 <button onClick={() => setPresence('offline')}>Offline</button>
             </form>
         </div>
