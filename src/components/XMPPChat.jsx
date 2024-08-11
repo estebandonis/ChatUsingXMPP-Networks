@@ -18,31 +18,34 @@ const XMPPChat = () => {
             password: 'admin123',
         });
 
+        // Set up message handler
+        xmppClient.on('stanza', async (stanza) => {
+            console.log('Stanza:', stanza.toString());
+            if (stanza.is('message') && stanza.getChild('body')) {
+                // const { from, body } = stanza.attrs;
+
+                const from = stanza.attr('from');
+                const body = stanza.attr('body');
+                console.log('Message:', from, body);
+                setMessages((prevMessages) => [...prevMessages, { from, body }]);
+            }
+
+            // Handle presence stanzas
+            if (stanza.is('presence')) {
+                const from = stanza.attr('from');
+                const type = stanza.attr('type');
+                const show = stanza.getChild('show')?.text();
+                console.log('Presence:', from, type, show);
+                updateContactStatus(from, type);
+            }
+        });
+
         xmppClient.on('online', async (address) => {
+            await xmppClient.send(xml('presence'));
+
             console.log('Connected as', address.toString());
             setStatus('online');
-
-            // Set up message handler
-            xmppClient.on('stanza', async (stanza) => {
-                if (stanza.is('message') && stanza.getChild('body')) {
-                    const { from, body } = stanza.attrs;
-
-                    console.log('Incoming message:', from, body);
-                    // const from = stanza.attr('from');
-                    // const body = stanza.attr('body');
-                    // setMessages((prevMessages) => [...prevMessages, { from, body }]);
-                }
-
-                // Handle presence stanzas
-                if (stanza.is('presence')) {
-                    const from = stanza.attr('from');
-                    const type = stanza.attr('type') || 'available';
-                    console.log('Presence:', from, type);
-                    updateContactStatus(from, type);
-                }
-            });
-
-            // Request roster (contact list)
+            
             const rosterStanza = xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' }));
             const rosterResult = await xmppClient.iqCaller.request(rosterStanza);
 
@@ -73,6 +76,10 @@ const XMPPChat = () => {
             xmppClient.stop().catch(console.error);
         };
     }, []);
+
+    useEffect(() => {
+        console.log('Messages:', messages);
+    }, [messages]);
 
     const updateContactStatus = (jid, status) => {
         setContacts(prevContacts =>
