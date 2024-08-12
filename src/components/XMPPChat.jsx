@@ -11,25 +11,18 @@ const XMPPChat = () => {
     const [password, setPassword] = useState('admin123');
 
     useEffect(() => {
-        console.log('Contacts:', contacts);
-        contacts.forEach(contact => {
-            const presenceStanza = xml('presence', { to: contact.jid, type: 'subscribe' });
-            xmpp.send(presenceStanza);
-        });
-    }, [contacts]);
+        console.log('Status: ', status);
+    }, [status]);
 
     useEffect(() => {
         const xmppClient = client({
             service: 'ws://alumchat.lol:7070/ws/',
             domain: 'alumchat.lol',
             username: user,
-            password: 'admin123',
-            resource: 'web',
+            password: password,
         });
 
         xmppClient.on('online', async (address) => {
-            await xmppClient.send(xml('presence'));
-
             console.log('Connected as', address.toString());
             setStatus('online');
 
@@ -72,24 +65,19 @@ const XMPPChat = () => {
         xmppClient.on('stanza', async (stanza) => {
             // console.log('Stanza:', stanza.toString());
             if (stanza.is('message') && stanza.getChild('body')) {
-                console.log('Message Stanza:', stanza.toString());
 
                 const fromLong = stanza.attr('from');
                 const from = fromLong.split('/')[0];
                 const body = stanza.getChild('body')?.text();
-                console.log('Message:', from, body);
                 setMessages((prevMessages) => [...prevMessages, { from, body }]);
             }
 
             // Handle presence stanzas
             if (stanza.is('presence')) {
-                console.log('Presence Stanza:', stanza.toString());
                 const from = stanza.attr('from');
                 const bareJid = from.split('/')[0];
                 const type = stanza.attr('type');
                 const show = stanza.getChild('show')?.text();
-                console.log('Presence:', bareJid, type, show);
-                console.log('Contacts in presence:', contacts);
                 updateContactStatus(bareJid, type ? type : show ? show : 'online');
             }
 
@@ -134,6 +122,7 @@ const XMPPChat = () => {
     };
 
     const setPresence = (status) => {
+        setDropdownOpen(false);
         if (xmpp) {
             let presenceStanza;
             if (status === 'unavailable') {
@@ -148,41 +137,114 @@ const XMPPChat = () => {
         }
     };
 
-    return (
-        <div>
-            <div>
-                <h2>Status: {status}</h2>
-            </div>
-            <div>
-                <h2>Contacts</h2>
-                {contacts.map((contact, index) => (
-                    <div key={index}>
-                        {contact.name} - {contact.status}
-                    </div>
-                ))}
-            </div>
-            <div>
-                <h2>Messages</h2>
-                {messages.map((msg, index) => (
-                    <div key={index}>
-                        <strong>{msg.from}:</strong> {msg.body}
-                    </div>
-                ))}
-            </div>
-            <form onSubmit={sendMessage}>
-                <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                />
-                <button type="submit">Send</button>
+    const [dropdownOpen, setDropdownOpen] = useState(false);
 
-                <button onClick={() => setPresence('available')}>Available</button>
-                <button onClick={() => setPresence('away')}>Away</button>
-                <button onClick={() => setPresence('dnd')}>Do Not Disturb</button>
-                <button onClick={() => setPresence('xa')}>Extended Away</button>
-                <button onClick={() => setPresence('unavailable')}>Offline</button>
-            </form>
+    const toggleDropdown = () => {
+        setDropdownOpen(!dropdownOpen);
+    };
+
+    return (
+        // <div>
+        //     <div>
+        //         <h2>Status: {status}</h2>
+        //     </div>
+        //     <div>
+        //         <h2>Contacts</h2>
+        //         {contacts.map((contact, index) => (
+        //             <div key={index}>
+        //                 {contact.name} - {contact.status}
+        //             </div>
+        //         ))}
+        //     </div>
+        //     <div>
+        //         <h2>Messages</h2>
+        //         {messages.map((msg, index) => (
+        //             <div key={index}>
+        //                 <strong>{msg.from}:</strong> {msg.body}
+        //             </div>
+        //         ))}
+        //     </div>
+        //     <form onSubmit={sendMessage}>
+        //         <input
+        //             type="text"
+        //             value={inputMessage}
+        //             onChange={(e) => setInputMessage(e.target.value)}
+        //             className={'border border-gray-400 p-2'}
+        //         />
+        //         <button type="submit">Send</button>
+        //
+        //         <button onClick={() => setPresence('available')}>Available</button>
+        //         <button onClick={() => setPresence('away')}>Away</button>
+        //         <button onClick={() => setPresence('dnd')}>Do Not Disturb</button>
+        //         <button onClick={() => setPresence('xa')}>Extended Away</button>
+        //         <button onClick={() => setPresence('unavailable')}>Offline</button>
+        //     </form>
+        // </div>
+        <div className="flex flex-col w-screen h-screen">
+            <div className="flex-none p-4 bg-gray-800 text-white">
+                <h2>Status: {status}</h2>
+                <div className="flex-none p-4 bg-gray-800 text-white">
+                    <div className="relative inline-block text-left">
+                        <button onClick={toggleDropdown} className="bg-gray-700 text-white px-4 py-2 rounded">
+                            Set Presence
+                        </button>
+                        {dropdownOpen && (
+                            <div
+                                className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                <div className="py-1" role="menu" aria-orientation="vertical"
+                                     aria-labelledby="options-menu">
+                                    <button onClick={() => setPresence('available')}
+                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Available
+                                    </button>
+                                    <button onClick={() => setPresence('away')}
+                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Away
+                                    </button>
+                                    <button onClick={() => setPresence('dnd')}
+                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Do
+                                        Not Disturb
+                                    </button>
+                                    <button onClick={() => setPresence('xa')}
+                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Extended
+                                        Away
+                                    </button>
+                                    <button onClick={() => setPresence('unavailable')}
+                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Offline
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+            <div className="flex flex-1 overflow-hidden">
+                <div className="flex-none w-1/4 p-4 bg-gray-100 overflow-y-auto">
+                    <h2 className="text-xl font-bold mb-4">Contacts</h2>
+                    {contacts.map((contact, index) => (
+                        <div key={index} className="p-2 border-b border-gray-300">
+                            {contact.name} - {contact.status}
+                        </div>
+                    ))}
+                </div>
+                <div className="flex flex-col flex-1 p-4 bg-white overflow-y-auto">
+                    <h2 className="text-xl font-bold mb-4">Messages</h2>
+                    <div className="flex-1 overflow-y-auto mb-4">
+                        {messages.map((msg, index) => (
+                            <div key={index} className="mb-2">
+                                <strong>{msg.from}:</strong> {msg.body}
+                            </div>
+                        ))}
+                    </div>
+                    <form onSubmit={sendMessage} className="flex">
+                        <input
+                            type="text"
+                            value={inputMessage}
+                            onChange={(e) => setInputMessage(e.target.value)}
+                            className="flex-1 border border-gray-400 p-2 rounded-l"
+                        />
+                        <button type="submit" className="bg-blue-500 text-white p-2 rounded-r">Send</button>
+                    </form>
+                </div>
+            </div>
         </div>
     );
 };

@@ -6,7 +6,6 @@ function App() {
 
   return (
       <>
-        <h1>XMPP Chat</h1>
         <XMPPChat />
       </>
   )
