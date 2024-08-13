@@ -186,15 +186,15 @@ const XMPPChat = () => {
                         </div>
                     ))}
                 </div>
-                <div className="flex flex-col flex-1 p-4 bg-white overflow-y-auto">
+                <div className="flex flex-col flex-1 p-4 pl-10 pr-10 bg-white overflow-y-auto">
                     <h2 className="text-xl font-bold mb-4">Messages {recipient}</h2>
                     <div className="flex-1 overflow-y-auto mb-4">
                         {messages.filter(msg => msg.from === recipient || (msg.from === user && msg.to === recipient)).map((msg, index) => (
                             <div key={index} className="mb-2">
                                 {
                                     msg.from === user ?
-                                        <div><strong>You: </strong>{msg.body}</div>
-                                        : <div><strong>{msg.from}: </strong>{msg.body}</div>
+                                        <div className="w-full flex justify-end"><div className="w-auto bg-gray-300 text-black p-2 rounded-lg self-start max-w-xs"><strong>You: </strong>{msg.body}</div></div>
+                                        : <div className="w-full flex justify-start"><div className="w-auto bg-blue-500 text-white p-2 rounded-lg self-center max-w-xs"><strong>{msg.from}: </strong>{msg.body}</div></div>
                                 }
                             </div>
                         ))}
