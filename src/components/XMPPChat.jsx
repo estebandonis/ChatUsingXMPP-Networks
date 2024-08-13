@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { client, xml } from '@xmpp/client';
 
+const domain = 'alumchat.lol';
+const service = 'ws://alumchat.lol:7070/ws/';
+
 const XMPPChat = () => {
     const [messages, setMessages] = useState([]);
     const [inputMessage, setInputMessage] = useState('');
@@ -9,6 +12,8 @@ const XMPPChat = () => {
     const [status, setStatus] = useState('offline');
     const [user, setUser] = useState('don21610');
     const [password, setPassword] = useState('admin123');
+    const [recipient, setRecipient] = useState('');
+    const [dropdownOpen, setDropdownOpen] = useState(false);
 
     useEffect(() => {
         console.log('Status: ', status);
@@ -16,15 +21,14 @@ const XMPPChat = () => {
 
     useEffect(() => {
         const xmppClient = client({
-            service: 'ws://alumchat.lol:7070/ws/',
-            domain: 'alumchat.lol',
+            service: service,
+            domain: domain,
             username: user,
             password: password,
         });
 
         xmppClient.on('online', async (address) => {
             console.log('Connected as', address.toString());
-            setStatus('online');
 
             const rosterStanza = xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' }));
             const rosterResult = await xmppClient.iqCaller.request(rosterStanza);
@@ -38,23 +42,14 @@ const XMPPChat = () => {
             }));
             setContacts(contactList);
 
-            const messageLogStanza = xml('iq', { type: 'get', id: 'message-log' }, xml('query', { xmlns: 'urn:xmpp:mam:2' }));
-            const result = await xmpp.iqCaller.request(messageLogStanza);
-            const messages = result.getChild('fin').getChildren('result').map(result => {
-                const message = result.getChild('forwarded').getChild('message');
-                return {
-                    from: message.attr('from'),
-                    body: message.getChildText('body'),
-                };
-            });
-            console.log('Messages:', messages);
-            setMessages(messages);
-
             // Request presence information for all contacts
             contactList.forEach(contact => {
                 const presenceStanza = xml('presence', { to: contact.jid, type: 'subscribe' });
                 xmppClient.send(presenceStanza);
             });
+
+            await xmppClient.send(xml('presence'));
+            setStatus('online');
         });
 
         xmppClient.on('offline', () => {
@@ -65,7 +60,6 @@ const XMPPChat = () => {
         xmppClient.on('stanza', async (stanza) => {
             // console.log('Stanza:', stanza.toString());
             if (stanza.is('message') && stanza.getChild('body')) {
-
                 const fromLong = stanza.attr('from');
                 const from = fromLong.split('/')[0];
                 const body = stanza.getChild('body')?.text();
@@ -73,7 +67,7 @@ const XMPPChat = () => {
             }
 
             // Handle presence stanzas
-            if (stanza.is('presence')) {
+            else if (stanza.is('presence')) {
                 const from = stanza.attr('from');
                 const bareJid = from.split('/')[0];
                 const type = stanza.attr('type');
@@ -81,7 +75,7 @@ const XMPPChat = () => {
                 updateContactStatus(bareJid, type ? type : show ? show : 'online');
             }
 
-            if (stanza.is('iq')){
+            else if (stanza.is('iq')){
                 console.log('IQ:', stanza.toString());
             }
         });
@@ -111,9 +105,10 @@ const XMPPChat = () => {
     const sendMessage = (e) => {
         e.preventDefault();
         if (xmpp && inputMessage.trim()) {
+            setMessages((prevMessages) => [...prevMessages, { from: user, body: inputMessage, to: recipient }]);
             const message = xml(
                 'message',
-                { type: 'chat', to: 'osc21611@alumchat.lol' },
+                { type: 'chat', to: recipient },
                 xml('body', {}, inputMessage)
             );
             xmpp.send(message);
@@ -137,49 +132,15 @@ const XMPPChat = () => {
         }
     };
 
-    const [dropdownOpen, setDropdownOpen] = useState(false);
-
     const toggleDropdown = () => {
         setDropdownOpen(!dropdownOpen);
     };
 
+    const settingRecipient = (jid) => {
+        setRecipient(jid);
+    }
+
     return (
-        // <div>
-        //     <div>
-        //         <h2>Status: {status}</h2>
-        //     </div>
-        //     <div>
-        //         <h2>Contacts</h2>
-        //         {contacts.map((contact, index) => (
-        //             <div key={index}>
-        //                 {contact.name} - {contact.status}
-        //             </div>
-        //         ))}
-        //     </div>
-        //     <div>
-        //         <h2>Messages</h2>
-        //         {messages.map((msg, index) => (
-        //             <div key={index}>
-        //                 <strong>{msg.from}:</strong> {msg.body}
-        //             </div>
-        //         ))}
-        //     </div>
-        //     <form onSubmit={sendMessage}>
-        //         <input
-        //             type="text"
-        //             value={inputMessage}
-        //             onChange={(e) => setInputMessage(e.target.value)}
-        //             className={'border border-gray-400 p-2'}
-        //         />
-        //         <button type="submit">Send</button>
-        //
-        //         <button onClick={() => setPresence('available')}>Available</button>
-        //         <button onClick={() => setPresence('away')}>Away</button>
-        //         <button onClick={() => setPresence('dnd')}>Do Not Disturb</button>
-        //         <button onClick={() => setPresence('xa')}>Extended Away</button>
-        //         <button onClick={() => setPresence('unavailable')}>Offline</button>
-        //     </form>
-        // </div>
         <div className="flex flex-col w-screen h-screen">
             <div className="flex-none p-4 bg-gray-800 text-white">
                 <h2>Status: {status}</h2>
@@ -220,17 +181,21 @@ const XMPPChat = () => {
                 <div className="flex-none w-1/4 p-4 bg-gray-100 overflow-y-auto">
                     <h2 className="text-xl font-bold mb-4">Contacts</h2>
                     {contacts.map((contact, index) => (
-                        <div key={index} className="p-2 border-b border-gray-300">
+                        <div key={index} onClick={() => settingRecipient(contact.jid)} className="p-2 border-b border-gray-300">
                             {contact.name} - {contact.status}
                         </div>
                     ))}
                 </div>
                 <div className="flex flex-col flex-1 p-4 bg-white overflow-y-auto">
-                    <h2 className="text-xl font-bold mb-4">Messages</h2>
+                    <h2 className="text-xl font-bold mb-4">Messages {recipient}</h2>
                     <div className="flex-1 overflow-y-auto mb-4">
-                        {messages.map((msg, index) => (
+                        {messages.filter(msg => msg.from === recipient || (msg.from === user && msg.to === recipient)).map((msg, index) => (
                             <div key={index} className="mb-2">
-                                <strong>{msg.from}:</strong> {msg.body}
+                                {
+                                    msg.from === user ?
+                                        <div><strong>You: </strong>{msg.body}</div>
+                                        : <div><strong>{msg.from}: </strong>{msg.body}</div>
+                                }
                             </div>
                         ))}
                     </div>
