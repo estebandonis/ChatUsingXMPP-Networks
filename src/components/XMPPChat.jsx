@@ -9,7 +9,8 @@ const XMPPChat = () => {
     const [inputMessage, setInputMessage] = useState('');
     const [xmpp, setXmpp] = useState(null);
     const [contacts, setContacts] = useState([]);
-    const [status, setStatus] = useState('offline');
+    const [groups, setGroups] = useState([]);
+    const [status, setStatus] = useState('Offline');
     const [user, setUser] = useState('don21610');
     const [password, setPassword] = useState('admin123');
     const [recipient, setRecipient] = useState('');
@@ -38,9 +39,24 @@ const XMPPChat = () => {
             const contactList = rosterItems.map(item => ({
                 jid: item.attr('jid'),
                 name: item.attr('name') || item.attr('jid'),
-                status: 'offline',
+                status: 'Offline',
+                presenceMessage: '',
+                unread: false,
             }));
             setContacts(contactList);
+
+            // Request groups
+            const groupsStanza = xml('iq', { type: 'get', id: 'get-groups' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }));
+            const groupsResult = await xmppClient.iqCaller.request(groupsStanza);
+            console.log('Groups:', groupsResult.toString());
+
+            // Process groups
+            const groupItems = groupsResult.getChild('query').getChildren('item');
+            const groupList = groupItems.map(item => ({
+                jid: item.attr('jid'),
+                name: item.attr('name') || item.attr('jid'),
+            }));
+            setGroups(groupList);
 
             // Request presence information for all contacts
             contactList.forEach(contact => {
@@ -49,7 +65,7 @@ const XMPPChat = () => {
             });
 
             await xmppClient.send(xml('presence'));
-            setStatus('online');
+            setStatus('Online');
         });
 
         xmppClient.on('offline', () => {
@@ -64,6 +80,7 @@ const XMPPChat = () => {
                 const from = fromLong.split('/')[0];
                 const body = stanza.getChild('body')?.text();
                 setMessages((prevMessages) => [...prevMessages, { from, body }]);
+                setContacts(prevContacts => prevContacts.map(contact => contact.jid === from && contact.jid !== recipient ? { ...contact, unread: true } : contact));
             }
 
             // Handle presence stanzas
@@ -72,7 +89,8 @@ const XMPPChat = () => {
                 const bareJid = from.split('/')[0];
                 const type = stanza.attr('type');
                 const show = stanza.getChild('show')?.text();
-                updateContactStatus(bareJid, type ? type : show ? show : 'online');
+                const presenceMessage = stanza.getChildText('status') || '';
+                updateContactStatus(bareJid, type ? type : show ? show : 'available', presenceMessage);
             }
 
             else if (stanza.is('iq')){
@@ -92,12 +110,25 @@ const XMPPChat = () => {
         console.log('Messages:', messages);
     }, [messages]);
 
-    const updateContactStatus = (jid, status) => {
-        console.log('Updating contact status:', jid, status);
-        console.log('Contacts:', contacts);
+    const setStatusString = (status) => {
+        if (status === 'unavailable') {
+            return 'Offline'
+        } else if (status === 'available') {
+            return 'Online'
+        } else if (status === 'away') {
+            return 'Away'
+        } else if (status === 'dnd') {
+            return 'Busy'
+        } else if (status === 'xa') {
+            return 'Not available'
+        }
+    }
+
+    const updateContactStatus = (jid, status, presenceMessage) => {
+        status = setStatusString(status);
         setContacts(prevContacts =>
             prevContacts.map(contact =>
-                contact.jid === jid ? { ...contact, status } : contact
+                contact.jid === jid ? { ...contact, status, presenceMessage } : contact
             )
         );
     };
@@ -127,8 +158,9 @@ const XMPPChat = () => {
             }else {
                 presenceStanza = xml('presence', {}, xml('show', {}, status));
             }
+
             xmpp.send(presenceStanza);
-            setStatus(status);
+            setStatus(setStatusString(status));
         }
     };
 
@@ -138,55 +170,78 @@ const XMPPChat = () => {
 
     const settingRecipient = (jid) => {
         setRecipient(jid);
+        setContacts(prevContacts => prevContacts.map(contact => contact.jid === jid  && contact.unread === true ? { ...contact, unread: false } : contact));
     }
 
     return (
         <div className="flex flex-col w-screen h-screen">
-            <div className="flex-none p-4 bg-gray-800 text-white">
-                <h2>Status: {status}</h2>
-                <div className="flex-none p-4 bg-gray-800 text-white">
-                    <div className="relative inline-block text-left">
-                        <button onClick={toggleDropdown} className="bg-gray-700 text-white px-4 py-2 rounded">
-                            Set Presence
-                        </button>
-                        {dropdownOpen && (
-                            <div
-                                className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
-                                <div className="py-1" role="menu" aria-orientation="vertical"
-                                     aria-labelledby="options-menu">
-                                    <button onClick={() => setPresence('available')}
-                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Available
-                                    </button>
-                                    <button onClick={() => setPresence('away')}
-                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Away
-                                    </button>
-                                    <button onClick={() => setPresence('dnd')}
-                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Do
-                                        Not Disturb
-                                    </button>
-                                    <button onClick={() => setPresence('xa')}
-                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Extended
-                                        Away
-                                    </button>
-                                    <button onClick={() => setPresence('unavailable')}
-                                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Offline
-                                    </button>
+            <div className="flex p-4 bg-gray-800 text-white">
+                <div className="w-1/4 flex justify-center items-center">
+                    {status === 'Online' ?
+                        <h2 className="text-green-500">Status: {status}</h2> :
+                        status === 'Offline' ?
+                            <h2 className="text-gray-500">Status: {status}</h2> :
+                            status === 'Busy' ?
+                                <h2 className="text-red-500">Status: {status}</h2> :
+                                status === 'Away' ?
+                                    <h2 className="text-orange-500">Status: {status}</h2> :
+                                    <h2 className="text-blue-500">Status: {status}</h2>}
+                    <div className="flex p-4 bg-gray-800 text-white">
+                        <div className="relative text-left">
+                            <button onClick={toggleDropdown} className="bg-gray-700 text-white px-4 py-2 rounded">
+                                State
+                            </button>
+                            {dropdownOpen && (
+                                <div
+                                    className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                    <div className="py-1" role="menu" aria-orientation="vertical"
+                                         aria-labelledby="options-menu">
+                                        <button onClick={() => setPresence('available')}
+                                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Online
+                                        </button>
+                                        <button onClick={() => setPresence('away')}
+                                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Away
+                                        </button>
+                                        <button onClick={() => setPresence('dnd')}
+                                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Do
+                                            Not Disturb
+                                        </button>
+                                        <button onClick={() => setPresence('xa')}
+                                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Extended
+                                            Away
+                                        </button>
+                                        <button onClick={() => setPresence('unavailable')}
+                                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">Offline
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
+                    </div>
+                    <div>
+
                     </div>
                 </div>
             </div>
             <div className="flex flex-1 overflow-hidden">
-                <div className="flex-none w-1/4 p-4 bg-gray-100 overflow-y-auto">
-                    <h2 className="text-xl font-bold mb-4">Contacts</h2>
-                    {contacts.map((contact, index) => (
-                        <div key={index} onClick={() => settingRecipient(contact.jid)} className="p-2 border-b border-gray-300">
-                            {contact.name} - {contact.status}
-                        </div>
-                    ))}
-                </div>
-                <div className="flex flex-col flex-1 p-4 pl-10 pr-10 bg-white overflow-y-auto">
+                    <div className="flex flex-col items-center w-1/4 pt-4 bg-gray-100 overflow-y-auto">
+                        <h2 className="text-xl font-bold mb-4">Contacts</h2>
+                        {contacts.map((contact, index) => (
+                            <div key={index} onClick={() => settingRecipient(contact.jid)} className="cursor-pointer w-full transition-all hover:bg-gray-800 hover:text-white p-2 border-2 rounded border-gray-800 overflow-x-auto">
+                                {contact.name} {contact.unread && <span className="text-red-500">New</span>}
+                                {contact.status === 'Online' ?
+                                    <h2 className="text-green-500">Status: {contact.status}</h2> :
+                                    contact.status === 'Offline' ?
+                                        <h2 className="text-gray-500">Status: {contact.status}</h2> :
+                                        contact.status === 'Busy'?
+                                            <h2 className="text-red-500">Status: {contact.status}</h2> :
+                                            contact.status === 'Away' ?
+                                                <h2 className="text-orange-500">Status: {contact.status}</h2> :
+                                                <h2 className="text-blue-500">Status: {contact.status}</h2>}
+                            </div>
+                        ))}
+                    </div>
+                <div className="flex flex-col flex-1 p-4 bg-white overflow-y-auto">
                     <h2 className="text-xl font-bold mb-4">Messages {recipient}</h2>
                     <div className="flex-1 overflow-y-auto mb-4">
                         {messages.filter(msg => msg.from === recipient || (msg.from === user && msg.to === recipient)).map((msg, index) => (
