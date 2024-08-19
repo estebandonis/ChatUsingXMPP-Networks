@@ -193,7 +193,9 @@ const XMPPChat = () => {
     }
 
     const sendPresenceMessage = async () => {
+        setPresenceMessageMenu(false);
         const presenceStanza = xml('presence', {}, xml('status', {}, presenceMessage));
+        console.log('Presence Message:', presenceStanza.toString());
         await xmpp.send(presenceStanza);
     }
 
@@ -275,7 +277,7 @@ const XMPPChat = () => {
                                     value={presenceMessage}
                                     onChange={(e) => setPresenceMessage(e.target.value)}
                                     className="border h-16 px-1 rounded text-gray-500"/>
-                                <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={() => {sendPresenceMessage}}>Send
+                                <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={sendPresenceMessage}>Send
                                 </button>
                             </div> : null}
                         </div>
