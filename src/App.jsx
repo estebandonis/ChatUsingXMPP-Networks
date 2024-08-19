@@ -1,13 +1,17 @@
 import './App.css'
-import XMPPChat from "./components/XMPPChat.jsx";
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { Login, SignUp, XMPPChat } from "./pages";
 
 function App() {
 
-
   return (
-      <>
-        <XMPPChat />
-      </>
+      <Router>
+          <Routes>
+              <Route path="/" element={<Login />} />
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="/chat" element={<XMPPChat />} />
+          </Routes>
+      </Router>
   )
 }
 

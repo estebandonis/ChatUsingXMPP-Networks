@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { client, xml } from '@xmpp/client';
 
 const domain = 'alumchat.lol';
 const service = 'ws://alumchat.lol:7070/ws/';
 
 const XMPPChat = () => {
+    const navigate = useNavigate()
+    const location = useLocation();
+    const { username: user, password } = location.state || {};
+
     const [messages, setMessages] = useState([]);
     const [inputMessage, setInputMessage] = useState('');
     const [xmpp, setXmpp] = useState(null);
     const [contacts, setContacts] = useState([]);
     const [groups, setGroups] = useState([]);
     const [status, setStatus] = useState('Offline');
-    const [user, setUser] = useState('don21610');
-    const [password, setPassword] = useState('admin123');
     const [recipient, setRecipient] = useState('');
     const [presenceMessage, setPresenceMessage] = useState('');
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -22,8 +26,8 @@ const XMPPChat = () => {
     const [invitationInput, setInvitationInput] = useState('');
 
     useEffect(() => {
-        console.log('Status: ', status);
-    }, [status]);
+        console.log('Groups: ', groups);
+    }, [groups]);
 
     useEffect(() => {
         const xmppClient = client({
@@ -51,7 +55,7 @@ const XMPPChat = () => {
             setContacts(contactList);
 
             // Request groups
-            const groupsStanza = xml('iq', { type: 'get' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }));
+            const groupsStanza = xml('iq', { to: 'conference.alumchat.lol', type: 'get' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }));
             const groupsResult = await xmppClient.iqCaller.request(groupsStanza);
             console.log('Groups:', groupsResult.toString());
 
@@ -199,6 +203,11 @@ const XMPPChat = () => {
         await xmpp.send(presenceStanza);
     }
 
+    const closeCon = async () => {
+        console.log("Entered in close")
+        xmpp.stop().catch(console.error);
+    }
+
     return (
         <div className="flex flex-col w-screen h-screen">
             <div className="flex bg-gray-800 text-white">
@@ -265,7 +274,7 @@ const XMPPChat = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="w-2/3">
+                    <div className="w-2/3 flex justify-evenly">
                         <div className="flex-col">
                             <div onClick={() => {setPresenceMessageMenu(!PresenceMessageMenu)}}>
                                 <h2>Presence Message:</h2>
@@ -280,6 +289,13 @@ const XMPPChat = () => {
                                 <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={sendPresenceMessage}>Send
                                 </button>
                             </div> : null}
+                        </div>
+                        <div>
+                            <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={ async() => {
+                                await closeCon()
+                                navigate('/')
+                            }}>Logout
+                            </button>
                         </div>
                     </div>
                 </div>
