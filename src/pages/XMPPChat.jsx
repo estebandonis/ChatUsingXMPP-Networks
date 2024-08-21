@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import {useState, useEffect, useCallback} from 'react';
+import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { client, xml } from '@xmpp/client';
@@ -14,6 +15,8 @@ const XMPPChat = () => {
     const [messages, setMessages] = useState([]);
     const [inputMessage, setInputMessage] = useState('');
     const [xmpp, setXmpp] = useState(null);
+    const [files, setFiles] = useState([]);
+    const [file, setFile] = useState(null);
     const [contacts, setContacts] = useState([]);
     const [groups, setGroups] = useState([]);
     const [status, setStatus] = useState('Offline');
@@ -26,8 +29,8 @@ const XMPPChat = () => {
     const [invitationInput, setInvitationInput] = useState('');
 
     useEffect(() => {
-        console.log('Groups: ', groups);
-    }, [groups]);
+        console.log('Files in UseEffect: ', files);
+    }, [files]);
 
     useEffect(() => {
         const xmppClient = client({
@@ -111,7 +114,10 @@ const XMPPChat = () => {
             }
 
             else if (stanza.is('iq')){
-                console.log('IQ:', stanza.toString());
+                if (stanza.attr('type') === 'result' && stanza.attr('from') === 'httpfileupload.alumchat.lol'){
+
+                    await handleFileSend(stanza, xmppClient);
+                }
             }
         });
 
@@ -123,9 +129,67 @@ const XMPPChat = () => {
         };
     }, []);
 
-    useEffect(() => {
-        console.log('Messages:', messages);
-    }, [messages]);
+    const handleFileSend = async (stanza, xmppClient) => {
+        const slot = stanza.getChild('slot')
+        const putUrl = slot.getChild('put').attr('url')
+        const getUrl = slot.getChild('get').attr('url')
+        const confirmationId = stanza.attr('id')
+
+        let fileToUpload;
+
+        // Use a callback to get the latest state and find the file to upload
+        setFiles(currentFiles => {
+            console.log('Current Files:', currentFiles);
+            fileToUpload = currentFiles.find(upload => upload.id === confirmationId);
+
+            return currentFiles;
+        });
+
+        // Wait for the state update to complete
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        console.log('File to upload:', fileToUpload);
+        
+        if (fileToUpload === undefined || fileToUpload === null) {
+            console.error("File not found");
+        }
+
+        try {
+
+            const response = await fetch(putUrl, {
+                method: "PUT",
+                body: fileToUpload.data,
+                headers: {
+                    "Content-Type": fileToUpload.data.type,
+                    "Content-Length": fileToUpload.data.size.toString(),
+                },
+            });
+
+            console.log('Response:', response);
+
+            if (!response.ok) {
+                console.error(`Failed to upload file: ${response.statusText}`);
+                return
+            }
+
+            // Send the message with the file URL
+            const messageStanza = xml(
+                'message',
+                { to: fileToUpload.to, type: 'chat' },
+                xml('body', {}, getUrl)
+            );
+
+            xmppClient.send(messageStanza);
+
+            setMessages((prevMessages) => [...prevMessages, { from: user, body: getUrl, to: fileToUpload.to }]);
+
+            console.log("File uploaded and message sent successfully");
+        } catch (error) {
+            console.error("Error uploading file or sending message:", error);
+        }
+
+        return
+    }
 
     const setStatusString = (status) => {
         if (status === 'unavailable') {
@@ -150,19 +214,17 @@ const XMPPChat = () => {
         );
     };
 
-    const sendMessage = (e) => {
-        e.preventDefault();
-        if (xmpp && inputMessage.trim()) {
-            setMessages((prevMessages) => [...prevMessages, { from: user, body: inputMessage, to: recipient }]);
+    const sendMessage = (messageToSend) => {
+        if (xmpp && messageToSend.trim()) {
+            setMessages((prevMessages) => [...prevMessages, { from: user, body: messageToSend, to: recipient }]);
             const message = xml(
                 'message',
-                { type: 'chat', to: recipient },
-                xml('body', {}, inputMessage)
+                { type: 'chat', to: recipient},
+                xml('body', {}, messageToSend)
             );
-            xmpp.send(message);
-            setInputMessage('');
+            sendStanza(message);
         }
-    };
+    }
 
     const setPresence = (status) => {
         setDropdownOpen(false);
@@ -176,7 +238,7 @@ const XMPPChat = () => {
                 presenceStanza = xml('presence', {}, xml('show', {}, status));
             }
 
-            xmpp.send(presenceStanza);
+            sendStanza(presenceStanza);
             setStatus(setStatusString(status));
         }
     };
@@ -185,10 +247,10 @@ const XMPPChat = () => {
         setDropdownOpen(!dropdownOpen);
     };
 
-    const sendInvitation = async (jid) => {
+    const sendInvitation = (jid) => {
         setSendInvitationMenu(false);
         const stanza = xml('presence', { to: jid, type: 'subscribe' });
-        await xmpp.send(stanza);
+        sendStanza(stanza)
     }
 
     const settingRecipient = (jid) => {
@@ -196,17 +258,56 @@ const XMPPChat = () => {
         setContacts(prevContacts => prevContacts.map(contact => contact.jid === jid  && contact.unread === true ? { ...contact, unread: false } : contact));
     }
 
-    const sendPresenceMessage = async () => {
+    const sendPresenceMessage = () => {
         setPresenceMessageMenu(false);
         const presenceStanza = xml('presence', {}, xml('status', {}, presenceMessage));
         console.log('Presence Message:', presenceStanza.toString());
-        await xmpp.send(presenceStanza);
+        sendStanza(presenceStanza);
     }
+
+    const sendStanza = (stanza) => {
+        xmpp.send(stanza);
+    }
+
+    const sendFile = () => {
+        const newFile = {
+            id: uuidv4(),
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            data: file,
+            to: recipient
+        }
+
+        setFiles((previousFiles) => [...previousFiles, newFile]);
+
+        const message = xml(
+            'iq',
+            {to: 'httpfileupload.alumchat.lol', type: 'get', id: newFile.id},
+            xml(
+                'request',
+                { xmlns: 'urn:xmpp:http:upload:0', filename: newFile.name, size: newFile.size, 'content-type': newFile.type }
+            )
+        )
+        xmpp.send(message);
+        setFile(null);
+    };
 
     const closeCon = async () => {
         console.log("Entered in close")
         xmpp.stop().catch(console.error);
     }
+
+    const handleForm = async (e) => {
+        e.preventDefault();
+
+        if (xmpp && file !== null){
+            await sendFile()
+        } else {
+            sendMessage(inputMessage);
+            setInputMessage('');
+        }
+    };
 
     return (
         <div className="flex flex-col w-screen h-screen">
@@ -352,8 +453,15 @@ const XMPPChat = () => {
                             </div>
                         ))}
                     </div>
-                    <form onSubmit={sendMessage} className="flex">
-                    <input
+                    <form onSubmit={handleForm} className="flex">
+
+                        <input  type="file" id="file" onChange={(event) => {
+                            if (event.target.files){
+                                setFile(event.target.files[0])
+                            }
+                        }}/>
+
+                        <input
                             type="text"
                             value={inputMessage}
                             onChange={(e) => setInputMessage(e.target.value)}
