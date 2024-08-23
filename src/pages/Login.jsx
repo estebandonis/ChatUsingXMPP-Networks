@@ -1,6 +1,7 @@
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import { useNavigate } from 'react-router-dom';
 import {client, xml} from "@xmpp/client";
+import { Notification } from '../components';
 
 const domain = 'alumchat.lol';
 const service = 'ws://alumchat.lol:7070/ws/';
@@ -10,6 +11,15 @@ const Login = () => {
 
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [notification, setNotification] = useState({ message: '', type: '' });
+
+    const showNotification = (message, type) => {
+        setNotification({ message, type });
+    };
+
+    const handleClose = () => {
+        setNotification({ message: '', type: '' });
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -28,6 +38,7 @@ const Login = () => {
 
         xmppClient.on('error', (err) => {
             console.error(err);
+            showNotification('Invalid username or password', 'error');
         })
 
         // Set up message handler
@@ -47,7 +58,10 @@ const Login = () => {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen w-full bg-gray-100">
+        <div className="flex items-center justify-center w-screen min-h-screen w-full bg-gray-100">
+            {notification.message && (
+                <Notification message={notification.message} type={notification.type} onClose={handleClose} />
+            )}
             <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
                 <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
                 <form onSubmit={handleSubmit}>

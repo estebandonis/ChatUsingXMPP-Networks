@@ -1,8 +1,9 @@
-import {useState, useEffect, useCallback} from 'react';
+import {useState, useEffect} from 'react';
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { client, xml } from '@xmpp/client';
+import {Notification} from "../components/index.jsx";
 
 const domain = 'alumchat.lol';
 const service = 'ws://alumchat.lol:7070/ws/';
@@ -27,10 +28,15 @@ const XMPPChat = () => {
     const [contactInfo, setContactInfo] = useState(false);
     const [sendInvitationMenu, setSendInvitationMenu] = useState(false);
     const [invitationInput, setInvitationInput] = useState('');
+    const [notification, setNotification] = useState({ message: '', type: '' });
 
-    useEffect(() => {
-        console.log('Files in UseEffect: ', files);
-    }, [files]);
+    const showNotification = (message, type) => {
+        setNotification({ message, type });
+    };
+
+    const handleClose = () => {
+        setNotification({ message: '', type: '' });
+    };
 
     useEffect(() => {
         const xmppClient = client({
@@ -93,11 +99,11 @@ const XMPPChat = () => {
                 const body = stanza.getChild('body')?.text();
                 setMessages((prevMessages) => [...prevMessages, { from, body }]);
                 setContacts(prevContacts => prevContacts.map(contact => contact.jid === from && contact.jid !== recipient ? { ...contact, unread: true } : contact));
+                setNotification({ message: 'New message from ' + from, type: 'info' });
             }
 
             // Handle presence stanzas
             else if (stanza.is('presence')) {
-                console.log('Presence:', stanza.toString());
                 const from = stanza.attr('from');
                 const bareJid = from.split('/')[0];
                 const type = stanza.attr('type');
@@ -139,7 +145,6 @@ const XMPPChat = () => {
 
         // Use a callback to get the latest state and find the file to upload
         setFiles(currentFiles => {
-            console.log('Current Files:', currentFiles);
             fileToUpload = currentFiles.find(upload => upload.id === confirmationId);
 
             return currentFiles;
@@ -148,8 +153,6 @@ const XMPPChat = () => {
         // Wait for the state update to complete
         await new Promise(resolve => setTimeout(resolve, 0));
 
-        console.log('File to upload:', fileToUpload);
-        
         if (fileToUpload === undefined || fileToUpload === null) {
             console.error("File not found");
         }
@@ -164,8 +167,6 @@ const XMPPChat = () => {
                     "Content-Length": fileToUpload.data.size.toString(),
                 },
             });
-
-            console.log('Response:', response);
 
             if (!response.ok) {
                 console.error(`Failed to upload file: ${response.statusText}`);
@@ -187,8 +188,6 @@ const XMPPChat = () => {
         } catch (error) {
             console.error("Error uploading file or sending message:", error);
         }
-
-        return
     }
 
     const setStatusString = (status) => {
@@ -216,6 +215,9 @@ const XMPPChat = () => {
 
     const sendMessage = (messageToSend) => {
         if (xmpp && messageToSend.trim()) {
+            if (contacts.find(contact => contact.jid === recipient).unread === true){
+                setContacts(prevContacts => prevContacts.map(contact => contact.jid === recipient ? { ...contact, unread: false } : contact));
+            }
             setMessages((prevMessages) => [...prevMessages, { from: user, body: messageToSend, to: recipient }]);
             const message = xml(
                 'message',
@@ -293,9 +295,20 @@ const XMPPChat = () => {
         setFile(null);
     };
 
+    const deleteAccount = async () => {
+        const response = await xmpp.iqCaller.request(
+            xml(
+                'iq',
+                { type: 'set' },
+                xml('query', { xmlns: 'jabber:iq:register' }, xml('remove'))
+            )
+        )
+        console.log(response.toString)
+    }
+
     const closeCon = async () => {
         console.log("Entered in close")
-        xmpp.stop().catch(console.error);
+        await xmpp.stop().catch(console.error);
     }
 
     const handleForm = async (e) => {
@@ -311,6 +324,9 @@ const XMPPChat = () => {
 
     return (
         <div className="flex flex-col w-screen h-screen">
+            {notification.message && (
+                <Notification message={notification.message} type={notification.type} onClose={handleClose} />
+            )}
             <div className="flex bg-gray-800 text-white">
                 <div className="w-1/4 flex-col justify-center items-center">
                     {contactInfo ? <div
@@ -397,6 +413,12 @@ const XMPPChat = () => {
                                 navigate('/')
                             }}>Logout
                             </button>
+                            <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={async() => {
+                                await deleteAccount()
+                                navigate('/')
+                            }}>
+                                Unregister
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -441,12 +463,12 @@ const XMPPChat = () => {
                                     msg.from === user ?
                                         <div className="w-full flex justify-end">
                                             <div
-                                                className="w-auto bg-gray-300 text-black p-2 rounded-lg self-start max-w-xs">
+                                                className="bg-gray-300 text-black p-2 rounded-lg self-start max-w-xs text-wrap">
                                                 <strong>You: </strong>{msg.body}</div>
                                         </div>
                                         : <div className="w-full flex justify-start">
                                             <div
-                                                className="w-auto bg-blue-500 text-white p-2 rounded-lg self-center max-w-xs">
+                                                className="bg-blue-500 text-white p-2 rounded-lg self-center max-w-xs text-wrap">
                                                 <strong>{msg.from}: </strong>{msg.body}</div>
                                         </div>
                                 }
