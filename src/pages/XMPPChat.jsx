@@ -20,6 +20,7 @@ const XMPPChat = () => {
     const [file, setFile] = useState(null);
     const [contacts, setContacts] = useState([]);
     const [groups, setGroups] = useState([]);
+    const [addedGroups, setAddedGroups] = useState([]);
     const [status, setStatus] = useState('Offline');
     const [recipient, setRecipient] = useState('');
     const [presenceMessage, setPresenceMessage] = useState('');
@@ -30,6 +31,7 @@ const XMPPChat = () => {
     const [invitationInput, setInvitationInput] = useState('');
     const [notification, setNotification] = useState({ message: '', type: '' });
     const [invitations, setInvitations] = useState([]);
+    const [activeGroup, setActiveGroup] = useState('');
 
     const showNotification = (message, type) => {
         setNotification({ message, type });
@@ -48,8 +50,6 @@ const XMPPChat = () => {
         });
 
         xmppClient.on('online', async (address) => {
-            console.log('Connected as', address.toString());
-
             const rosterStanza = xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' }));
             const rosterResult = await xmppClient.iqCaller.request(rosterStanza);
 
@@ -67,7 +67,6 @@ const XMPPChat = () => {
             // Request groups
             const groupsStanza = xml('iq', { to: 'conference.alumchat.lol', type: 'get' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }));
             const groupsResult = await xmppClient.iqCaller.request(groupsStanza);
-            console.log('Groups:', groupsResult.toString());
 
             // Process groups
             const groupItems = groupsResult.getChild('query').getChildren('item');
@@ -75,7 +74,6 @@ const XMPPChat = () => {
                 jid: item.attr('jid'),
                 name: item.attr('name') || item.attr('jid'),
             }));
-            console.log('Group List:', groupList);
             setGroups(groupList);
 
             // Request presence information for all contacts
@@ -96,12 +94,42 @@ const XMPPChat = () => {
         xmppClient.on('stanza', async (stanza) => {
             // console.log('Stanza:', stanza.toString());
             if (stanza.is('message') && stanza.getChild('body')) {
-                const fromLong = stanza.attr('from');
-                const from = fromLong.split('/')[0];
-                const body = stanza.getChild('body')?.text();
-                setMessages((prevMessages) => [...prevMessages, { from, body }]);
-                setContacts(prevContacts => prevContacts.map(contact => contact.jid === from && contact.jid !== recipient ? { ...contact, unread: true } : contact));
-                setNotification({ message: 'New message from ' + from, type: 'info' });
+                if (stanza.attr('type') === 'chat') {
+                    const fromLong = stanza.attr('from');
+                    const from = fromLong.split('/')[0];
+                    const body = stanza.getChild('body')?.text();
+                    setMessages((prevMessages) => [...prevMessages, {from, body}]);
+                    setContacts(prevContacts => prevContacts.map(contact => contact.jid === from && contact.jid !== recipient ? {
+                        ...contact,
+                        unread: true
+                    } : contact));
+                    setNotification({message: 'New message from ' + from, type: 'info'});
+                } else if (stanza.attr('type') === 'groupchat') {
+                    const from = stanza.attr('from');
+                    const [ groupJid, sender ] = from.split('/');
+
+                    let tempGroups;
+
+                    await setGroups(prevGroupsMessage => {
+                        tempGroups = prevGroupsMessage;
+                        return prevGroupsMessage;
+                    })
+
+                    // Wait for the state update to complete
+                    await new Promise(resolve => setTimeout(resolve, 0));
+
+                    let foundGroup
+
+                    if (tempGroups){
+                        foundGroup = tempGroups.find(group => group.jid === groupJid)
+                    }
+
+                    if (foundGroup) {
+                        const body = stanza.getChild('body')?.text();
+                        setMessages((prevMessages) => [...prevMessages, {in: groupJid, from: sender, body: body}]);
+                        setNotification({message: 'New message from group ' + foundGroup.name, type: 'info'});
+                    }
+                }
             }
 
             // Handle presence stanzas
@@ -109,12 +137,50 @@ const XMPPChat = () => {
                 const from = stanza.attr('from');
                 const bareJid = from.split('/')[0];
                 const type = stanza.attr('type');
+                let tempGroups;
+
+                setGroups(prevGroupPresence => {
+                    tempGroups = prevGroupPresence;
+                    return prevGroupPresence;
+                });
+
+                // Wait for the state update to complete
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                let foundGroup
+
+                if (tempGroups){
+                    foundGroup = tempGroups.find(group => group.jid === bareJid)
+                }
 
                 if (type === 'subscribed') {
                     setNotification({ message: from + ' has accepted your request', type: 'success' });
                 } else if (type === 'subscribe') {
                     setNotification({ message: from + ' wants to add you to their contacts', type: 'info' });
                     setInvitations(prevInvitations => [...prevInvitations, from]);
+                } else if (foundGroup){
+                    const [ groupJid, sender ] = from.split('/');
+                    const name = stanza.attr('name')
+
+                    let addedGro;
+
+                    setAddedGroups(prevGroupsAdded => {
+                        addedGro = prevGroupsAdded;
+                        return prevGroupsAdded;
+                    })
+
+                    // Wait for the state update to complete
+                    await new Promise(resolve => setTimeout(resolve, 0));
+
+                    if (!addedGro.find(group => group.jid === groupJid)) {
+                        const tempGroup = {
+                            jid: foundGroup.jid,
+                            name: foundGroup.name,
+                            unread: false,
+                        }
+
+                        setAddedGroups(prevGroups => [...prevGroups, tempGroup])
+                    }
                 } else {
                     const show = stanza.getChild('show')?.text();
                     const presenceMessage = stanza.getChildText('status') || '';
@@ -137,6 +203,7 @@ const XMPPChat = () => {
             xmppClient.stop().catch(console.error);
         };
     }, []);
+
 
     const handleFileSend = async (stanza, xmppClient) => {
         const slot = stanza.getChild('slot')
@@ -218,16 +285,25 @@ const XMPPChat = () => {
 
     const sendMessage = (messageToSend) => {
         if (xmpp && messageToSend.trim()) {
-            if (contacts.find(contact => contact.jid === recipient).unread === true){
+            if (activeGroup === '' && contacts.find(contact => contact.jid === recipient).unread === true){
                 setContacts(prevContacts => prevContacts.map(contact => contact.jid === recipient ? { ...contact, unread: false } : contact));
             }
             setMessages((prevMessages) => [...prevMessages, { from: user, body: messageToSend, to: recipient }]);
-            const message = xml(
-                'message',
-                { type: 'chat', to: recipient},
-                xml('body', {}, messageToSend)
-            );
-            sendStanza(message);
+            if (activeGroup === ''){
+                const message = xml(
+                    'message',
+                    { type: 'chat', to: recipient},
+                    xml('body', {}, messageToSend)
+                );
+                sendStanza(message);
+            } else {
+                const message = xml(
+                    'message',
+                    { to: activeGroup, type: 'groupchat' },
+                    xml('body', {}, messageToSend)
+                )
+                sendStanza(message);
+            }
         }
     }
 
@@ -259,14 +335,20 @@ const XMPPChat = () => {
     }
 
     const settingRecipient = (jid) => {
+        setActiveGroup('')
         setRecipient(jid);
         setContacts(prevContacts => prevContacts.map(contact => contact.jid === jid  && contact.unread === true ? { ...contact, unread: false } : contact));
+    }
+
+    const settingGroup = (name) => {
+        setActiveGroup(name);
+        setRecipient(name);
+        setAddedGroups(prevGroups => prevGroups.map(group => group.name === name && group.unread === true ? { ...group, unread: false } : group));
     }
 
     const sendPresenceMessage = () => {
         setPresenceMessageMenu(false);
         const presenceStanza = xml('presence', {}, xml('status', {}, presenceMessage));
-        console.log('Presence Message:', presenceStanza.toString());
         sendStanza(presenceStanza);
     }
 
@@ -309,7 +391,6 @@ const XMPPChat = () => {
     };
 
     const ignoreInvitation = (jid) => {
-        console.log("Delete JID: ", jid)
         setInvitations(prevInvitations => prevInvitations.filter(invitation => invitation !== jid));
         showNotification(`You have ignored ${jid}'s request`, 'info');
         setSendInvitationMenu(false);
@@ -323,6 +404,10 @@ const XMPPChat = () => {
                 xml('query', { xmlns: 'jabber:iq:register' }, xml('remove'))
             )
         )
+
+        if (response.attrs.type === 'result') {
+            xmpp.stop()
+        }
         console.log(response.toString)
     }
 
@@ -348,6 +433,21 @@ const XMPPChat = () => {
             setInputMessage('');
         }
     };
+
+    const joinGroup = async () => {
+        const group = groups.find(group => group.name === invitationInput);
+        console.log(invitationInput)
+        if (group){
+            const stanza = xml('presence', { to: group.jid + '/' + user }, xml(
+                "x",
+                { xmlns: "http://jabber.org/protocol/muc" },
+                xml("history", { maxstanzas: "20" }) // Request last 20 messages
+            ));
+            sendStanza(stanza);
+        } else {
+            setNotification({ message: 'No group with name: ' + invitationInput + ' found', type: 'error' });
+        }
+    }
 
     return (
         <div className="flex flex-col w-screen h-screen">
@@ -454,6 +554,7 @@ const XMPPChat = () => {
                 <div className="flex flex-col items-center w-1/4 pt-4 bg-gray-100 overflow-y-auto">
                     <div className="flex justify-evenly items-center">
                         <h2 className="text-xl font-bold">Chats</h2>
+                        <button className="border rounded-full h-8 w-8 bg-blue-600 text-white">+</button>
                     </div>
                     {contacts.map((contact, index) => (
                         <div key={index} onClick={() => settingRecipient(contact.jid)}
@@ -471,24 +572,39 @@ const XMPPChat = () => {
                                             <h2 className="text-blue-500">Status: {contact.status}</h2>}
                         </div>
                     ))}
+                    {addedGroups.map((group, index) => (
+                        <div key={index} onClick={() => settingGroup(group.jid)}
+                             className="cursor-pointer w-full transition-all hover:bg-gray-800 hover:text-white p-2 border-2 rounded border-gray-800 overflow-x-auto flex flex-col justify-center items-center">
+                            <p className="w-fit hover:border-blue-600 hover:text-blue-500">{group.name}</p>
+                            {group.unread && <span className="text-red-500">New</span>}
+                        </div>
+                    ))}
 
-                    <button className="border p-2 bg-black text-white mt-4 rounded" onClick={() => {setSendInvitationMenu(!sendInvitationMenu)}}>Add Contact</button>
+                    <button className="border p-2 bg-black text-white mt-4 rounded" onClick={() => {
+                        setSendInvitationMenu(!sendInvitationMenu)
+                    }}>Add Contact
+                    </button>
                     {sendInvitationMenu ? <div className="bg-black p-5 flex-col justify-center items-center rounded-xl">
-                        <div className="flex justify-center items-center mb-4">
+                        <div className="flex-col justify-center items-center mb-4">
                             <input
                                 type="text"
                                 placeholder="Empty"
                                 value={invitationInput}
                                 onChange={(e) => setInvitationInput(e.target.value)}
                                 className="border w-52 px-1 rounded text-gray-500"/>
-                            <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={sendInvitation}>Send</button>
+                            <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={sendInvitation}>Send to
+                                Contact
+                            </button>
+                            <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={joinGroup}>Send to
+                                Group
+                            </button>
                         </div>
                         <div className="flex-col justify-center items-center">
-                        {invitations.length > 0 ? <div className="flex flex-col">
-                            {invitations.map((invitation, index) => (
-                                <div key={index} className="flex justify-evenly items-center mb-3">
-                                    <p className="text-white mr-4">{invitation}</p>
-                                    <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={() => acceptInvitation(invitation)}>Accept</button>
+                            {invitations.length > 0 ? <div className="flex flex-col">
+                                {invitations.map((invitation, index) => (
+                                    <div key={index} className="flex justify-evenly items-center mb-3">
+                                        <p className="text-white mr-4">{invitation}</p>
+                                        <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={() => acceptInvitation(invitation)}>Accept</button>
                                     <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={() => ignoreInvitation(invitation)}>Ignore</button>
                                 </div>
                             ))}
@@ -498,7 +614,25 @@ const XMPPChat = () => {
                 <div className="flex flex-col flex-1 p-4 bg-white overflow-y-auto">
                     <h2 className="text-xl font-bold mb-4">Chat with {recipient}</h2>
                     <div className="flex-1 overflow-y-auto mb-4">
-                        {messages.filter(msg => msg.from === recipient || (msg.from === user && msg.to === recipient)).map((msg, index) => (
+                        { activeGroup === '' ?  messages.filter(msg => msg.from === recipient || (msg.from === user && msg.to === recipient)).map((msg, index) => (
+                            <div key={index} className="mb-2">
+                                {
+                                    msg.from === user ?
+                                        <div className="w-full flex justify-end">
+                                            <div
+                                                className="bg-gray-300 text-black p-2 rounded-lg self-start max-w-xs">
+                                                <strong>You: </strong> {checkForURL(msg.body) ?
+                                                <a href={msg.body} download>Download file</a> : msg.body} </div>
+                                        </div>
+                                        : <div className="w-full flex justify-start">
+                                            <div
+                                                className="bg-blue-500 text-white p-2 rounded-lg self-center max-w-xs text-wrap">
+                                                <strong>{msg.from}: </strong> {checkForURL(msg.body) ?
+                                                <a href={msg.body} download>Download file</a> : msg.body} </div>
+                                        </div>
+                                }
+                            </div>
+                        )) : messages.filter(msg => msg.in === activeGroup).map((msg, index) => (
                             <div key={index} className="mb-2">
                                 {
                                     msg.from === user ?
@@ -520,8 +654,8 @@ const XMPPChat = () => {
                     </div>
                     <form onSubmit={handleForm} className="flex">
 
-                        <input  type="file" id="file" onChange={(event) => {
-                            if (event.target.files){
+                        <input type="file" id="file" onChange={(event) => {
+                            if (event.target.files) {
                                 setFile(event.target.files[0])
                             }
                         }}/>
