@@ -33,15 +33,19 @@ const XMPPChat = () => {
     const [invitations, setInvitations] = useState([]);
     const [activeGroup, setActiveGroup] = useState('');
 
+    // In charge of showing notifications
     const showNotification = (message, type) => {
         setNotification({ message, type });
     };
 
+    // In charge of closing notifications
     const handleClose = () => {
         setNotification({ message: '', type: '' });
     };
 
+    // In charge of handling the effect of the component and incomming traffic
     useEffect(() => {
+        // Client configuration
         const xmppClient = client({
             service: service,
             domain: domain,
@@ -49,6 +53,7 @@ const XMPPChat = () => {
             password: password,
         });
 
+        // Set up the online handler
         xmppClient.on('online', async (address) => {
             const rosterStanza = xml('iq', { type: 'get' }, xml('query', { xmlns: 'jabber:iq:roster' }));
             const rosterResult = await xmppClient.iqCaller.request(rosterStanza);
@@ -90,7 +95,7 @@ const XMPPChat = () => {
             console.log('Connection has been closed');
         });
 
-        // Set up message handler
+        // Set up stanza handler
         xmppClient.on('stanza', async (stanza) => {
             // console.log('Stanza:', stanza.toString());
             if (stanza.is('message') && stanza.getChild('body')) {
@@ -196,15 +201,18 @@ const XMPPChat = () => {
             }
         });
 
+        // start client
         xmppClient.start().catch(console.error);
         setXmpp(xmppClient);
 
         return () => {
+            // stop client
             xmppClient.stop().catch(console.error);
         };
     }, []);
 
 
+    // handle send file logic
     const handleFileSend = async (stanza, xmppClient) => {
         const slot = stanza.getChild('slot')
         const putUrl = slot.getChild('put').attr('url')
@@ -260,6 +268,7 @@ const XMPPChat = () => {
         }
     }
 
+    // set status
     const setStatusString = (status) => {
         if (status === 'unavailable') {
             return 'Offline'
@@ -274,6 +283,7 @@ const XMPPChat = () => {
         }
     }
 
+    // update contact status
     const updateContactStatus = (jid, status, presenceMessage) => {
         status = setStatusString(status);
         setContacts(prevContacts =>
@@ -283,6 +293,7 @@ const XMPPChat = () => {
         );
     };
 
+    // send message logic
     const sendMessage = (messageToSend) => {
         if (xmpp && messageToSend.trim()) {
             if (activeGroup === '' && contacts.find(contact => contact.jid === recipient).unread === true){
@@ -307,6 +318,7 @@ const XMPPChat = () => {
         }
     }
 
+    // set presence
     const setPresence = (status) => {
         setDropdownOpen(false);
         if (xmpp) {
@@ -324,38 +336,45 @@ const XMPPChat = () => {
         }
     };
 
+    // toggle dropdown
     const toggleDropdown = () => {
         setDropdownOpen(!dropdownOpen);
     };
 
+    // send invitation
     const sendInvitation = (jid) => {
         setSendInvitationMenu(false);
         const stanza = xml('presence', { to: jid, type: 'subscribe' });
         sendStanza(stanza)
     }
 
+    // Set recipient
     const settingRecipient = (jid) => {
         setActiveGroup('')
         setRecipient(jid);
         setContacts(prevContacts => prevContacts.map(contact => contact.jid === jid  && contact.unread === true ? { ...contact, unread: false } : contact));
     }
 
+    // Set current group
     const settingGroup = (name) => {
         setActiveGroup(name);
         setRecipient(name);
         setAddedGroups(prevGroups => prevGroups.map(group => group.name === name && group.unread === true ? { ...group, unread: false } : group));
     }
 
+    // Send presence message
     const sendPresenceMessage = () => {
         setPresenceMessageMenu(false);
         const presenceStanza = xml('presence', {}, xml('status', {}, presenceMessage));
         sendStanza(presenceStanza);
     }
 
+    // send stanza logic
     const sendStanza = (stanza) => {
         xmpp.send(stanza);
     }
 
+    // send file logic
     const sendFile = () => {
         const newFile = {
             id: uuidv4(),
@@ -380,6 +399,7 @@ const XMPPChat = () => {
         setFile(null);
     };
 
+    // Accept invitation
     const acceptInvitation = (jid) => {
         if (xmpp) {
             const presenceStanza = xml('presence', { to: jid, type: 'subscribed' });
@@ -390,12 +410,14 @@ const XMPPChat = () => {
         setSendInvitationMenu(false);
     };
 
+    // Ignore invitation
     const ignoreInvitation = (jid) => {
         setInvitations(prevInvitations => prevInvitations.filter(invitation => invitation !== jid));
         showNotification(`You have ignored ${jid}'s request`, 'info');
         setSendInvitationMenu(false);
     }
 
+    // Delete account
     const deleteAccount = async () => {
         const response = await xmpp.iqCaller.request(
             xml(
@@ -411,11 +433,13 @@ const XMPPChat = () => {
         console.log(response.toString)
     }
 
+    // Close connection
     const closeCon = async () => {
         console.log("Entered in close")
         await xmpp.stop().catch(console.error);
     }
 
+    // Check for URL
     const checkForURL = (message) => {
         const urlRegex = /http/g;
         const urlRegex2 = message.match(urlRegex);
@@ -423,6 +447,7 @@ const XMPPChat = () => {
         return urlRegex2
     }
 
+    // Handle form
     const handleForm = async (e) => {
         e.preventDefault();
 
@@ -434,6 +459,7 @@ const XMPPChat = () => {
         }
     };
 
+    // Handle join group
     const joinGroup = async () => {
         const group = groups.find(group => group.name === invitationInput);
         console.log(invitationInput)
@@ -449,6 +475,7 @@ const XMPPChat = () => {
         }
     }
 
+    // Create group
     const createGroup = async () => {
         const roomJid = `${invitationInput}@conference.alumchat.lol`;
 
@@ -525,10 +552,7 @@ const XMPPChat = () => {
         await joinGroup
     }
 
-    useEffect(() => {
-        console.log("Groups", groups)
-    }, [groups])
-
+    // main component
     return (
         <div className="flex flex-col w-screen h-screen">
             {notification.message && (
