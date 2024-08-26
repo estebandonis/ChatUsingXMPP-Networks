@@ -449,6 +449,86 @@ const XMPPChat = () => {
         }
     }
 
+    const createGroup = async () => {
+        const roomJid = `${invitationInput}@conference.alumchat.lol`;
+
+        // Create the room
+        const presenceStanza = xml(
+            "presence",
+            { to: `${roomJid}/${user}` },
+            xml("x", { xmlns: "http://jabber.org/protocol/muc" })
+        );
+        sendStanza(presenceStanza);
+
+        // Configure the room
+        const configureIQ = xml(
+            "iq",
+            { to: roomJid, type: "set", id: "config1" },
+            xml(
+                "query",
+                { xmlns: "http://jabber.org/protocol/muc#owner" },
+                xml(
+                    "x",
+                    { xmlns: "jabber:x:data", type: "submit" },
+                    xml(
+                        "field",
+                        { var: "FORM_TYPE" },
+                        xml("value", {}, "http://jabber.org/protocol/muc#roomconfig")
+                    ),
+                    xml(
+                        "field",
+                        { var: "muc#roomconfig_roomname" },
+                        xml("value", {}, invitationInput)
+                    ),
+                    xml(
+                        "field",
+                        { var: "muc#roomconfig_roomdesc" },
+                        xml("value", {}, '')
+                    ),
+                    xml(
+                        "field",
+                        { var: "muc#roomconfig_publicroom" },
+                        xml("value", {}, "1")
+                    ),
+                    xml(
+                        "field",
+                        { var: "muc#roomconfig_persistentroom" },
+                        xml("value", {}, "1")
+                    ),
+                    xml(
+                        "field",
+                        { var: "muc#roomconfig_membersonly" },
+                        xml("value", {}, "0")
+                    ),
+                    xml(
+                        "field",
+                        { var: "muc#roomconfig_allowinvites" },
+                        xml("value", {}, "1")
+                    )
+                )
+            )
+        );
+
+        sendStanza(configureIQ);
+
+        const groupsStanza = xml('iq', { to: 'conference.alumchat.lol', type: 'get' }, xml('query', { xmlns: 'http://jabber.org/protocol/disco#items' }));
+        const groupsResult = await xmpp.iqCaller.request(groupsStanza);
+
+        // Process groups
+        const groupItems = groupsResult.getChild('query').getChildren('item');
+        const groupList = groupItems.map(item => ({
+            jid: item.attr('jid'),
+            name: item.attr('name') || item.attr('jid'),
+        }));
+        setGroups(groupList);
+
+        await joinGroup
+    }
+
+    useEffect(() => {
+        console.log("Groups", groups)
+    }, [groups])
+
     return (
         <div className="flex flex-col w-screen h-screen">
             {notification.message && (
@@ -554,7 +634,6 @@ const XMPPChat = () => {
                 <div className="flex flex-col items-center w-1/4 pt-4 bg-gray-100 overflow-y-auto">
                     <div className="flex justify-evenly items-center">
                         <h2 className="text-xl font-bold">Chats</h2>
-                        <button className="border rounded-full h-8 w-8 bg-blue-600 text-white">+</button>
                     </div>
                     {contacts.map((contact, index) => (
                         <div key={index} onClick={() => settingRecipient(contact.jid)}
@@ -597,6 +676,8 @@ const XMPPChat = () => {
                             </button>
                             <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={joinGroup}>Send to
                                 Group
+                            </button>
+                            <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={createGroup}>Create group
                             </button>
                         </div>
                         <div className="flex-col justify-center items-center">
