@@ -29,6 +29,7 @@ const XMPPChat = () => {
     const [sendInvitationMenu, setSendInvitationMenu] = useState(false);
     const [invitationInput, setInvitationInput] = useState('');
     const [notification, setNotification] = useState({ message: '', type: '' });
+    const [invitations, setInvitations] = useState([]);
 
     const showNotification = (message, type) => {
         setNotification({ message, type });
@@ -74,6 +75,7 @@ const XMPPChat = () => {
                 jid: item.attr('jid'),
                 name: item.attr('name') || item.attr('jid'),
             }));
+            console.log('Group List:', groupList);
             setGroups(groupList);
 
             // Request presence information for all contacts
@@ -109,9 +111,10 @@ const XMPPChat = () => {
                 const type = stanza.attr('type');
 
                 if (type === 'subscribed') {
-                    alert(from + ' has accepted your request');
+                    setNotification({ message: from + ' has accepted your request', type: 'success' });
                 } else if (type === 'subscribe') {
-                    alert(from + ' wants to add you to their contacts');
+                    setNotification({ message: from + ' wants to add you to their contacts', type: 'info' });
+                    setInvitations(prevInvitations => [...prevInvitations, from]);
                 } else {
                     const show = stanza.getChild('show')?.text();
                     const presenceMessage = stanza.getChildText('status') || '';
@@ -295,6 +298,23 @@ const XMPPChat = () => {
         setFile(null);
     };
 
+    const acceptInvitation = (jid) => {
+        if (xmpp) {
+            const presenceStanza = xml('presence', { to: jid, type: 'subscribed' });
+            xmpp.send(presenceStanza);
+            showNotification(`${jid} has been added to your contacts`, 'success');
+            setInvitations(prevInvitations => prevInvitations.filter(invitation => invitation !== jid));
+        }
+        setSendInvitationMenu(false);
+    };
+
+    const ignoreInvitation = (jid) => {
+        console.log("Delete JID: ", jid)
+        setInvitations(prevInvitations => prevInvitations.filter(invitation => invitation !== jid));
+        showNotification(`You have ignored ${jid}'s request`, 'info');
+        setSendInvitationMenu(false);
+    }
+
     const deleteAccount = async () => {
         const response = await xmpp.iqCaller.request(
             xml(
@@ -309,6 +329,13 @@ const XMPPChat = () => {
     const closeCon = async () => {
         console.log("Entered in close")
         await xmpp.stop().catch(console.error);
+    }
+
+    const checkForURL = (message) => {
+        const urlRegex = /http/g;
+        const urlRegex2 = message.match(urlRegex);
+        console.log("Contiene regex: ", urlRegex2)
+        return urlRegex2
     }
 
     const handleForm = async (e) => {
@@ -425,7 +452,9 @@ const XMPPChat = () => {
             </div>
             <div className="flex flex-1 overflow-hidden">
                 <div className="flex flex-col items-center w-1/4 pt-4 bg-gray-100 overflow-y-auto">
-                    <h2 className="text-xl font-bold mb-4">Chats</h2>
+                    <div className="flex justify-evenly items-center">
+                        <h2 className="text-xl font-bold">Chats</h2>
+                    </div>
                     {contacts.map((contact, index) => (
                         <div key={index} onClick={() => settingRecipient(contact.jid)}
                              className="cursor-pointer w-full transition-all hover:bg-gray-800 hover:text-white p-2 border-2 rounded border-gray-800 overflow-x-auto flex flex-col justify-center items-center">
@@ -444,15 +473,27 @@ const XMPPChat = () => {
                     ))}
 
                     <button className="border p-2 bg-black text-white mt-4 rounded" onClick={() => {setSendInvitationMenu(!sendInvitationMenu)}}>Add Contact</button>
-                    {sendInvitationMenu ? <div className="bg-black p-5 flex justify-center items-center rounded-xl">
-                                <input
-                                    type="text"
-                                    placeholder="Empty"
-                                    value={invitationInput}
-                                    onChange={(e) => setInvitationInput(e.target.value)}
-                                    className="border w-52 px-1 rounded text-gray-500"/>
+                    {sendInvitationMenu ? <div className="bg-black p-5 flex-col justify-center items-center rounded-xl">
+                        <div className="flex justify-center items-center mb-4">
+                            <input
+                                type="text"
+                                placeholder="Empty"
+                                value={invitationInput}
+                                onChange={(e) => setInvitationInput(e.target.value)}
+                                className="border w-52 px-1 rounded text-gray-500"/>
                             <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={sendInvitation}>Send</button>
-                            </div> : null}
+                        </div>
+                        <div className="flex-col justify-center items-center">
+                        {invitations.length > 0 ? <div className="flex flex-col">
+                            {invitations.map((invitation, index) => (
+                                <div key={index} className="flex justify-evenly items-center mb-3">
+                                    <p className="text-white mr-4">{invitation}</p>
+                                    <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={() => acceptInvitation(invitation)}>Accept</button>
+                                    <button className="bg-gray-700 text-white h-8 px-2 rounded" onClick={() => ignoreInvitation(invitation)}>Ignore</button>
+                                </div>
+                            ))}
+                        </div> : null}
+                        </div></div> : null}
                 </div>
                 <div className="flex flex-col flex-1 p-4 bg-white overflow-y-auto">
                     <h2 className="text-xl font-bold mb-4">Chat with {recipient}</h2>
@@ -463,13 +504,15 @@ const XMPPChat = () => {
                                     msg.from === user ?
                                         <div className="w-full flex justify-end">
                                             <div
-                                                className="bg-gray-300 text-black p-2 rounded-lg self-start max-w-xs text-wrap">
-                                                <strong>You: </strong>{msg.body}</div>
+                                                className="bg-gray-300 text-black p-2 rounded-lg self-start max-w-xs">
+                                                <strong>You: </strong> {checkForURL(msg.body) ?
+                                                <a href={msg.body} download>Download file</a> : msg.body} </div>
                                         </div>
                                         : <div className="w-full flex justify-start">
                                             <div
                                                 className="bg-blue-500 text-white p-2 rounded-lg self-center max-w-xs text-wrap">
-                                                <strong>{msg.from}: </strong>{msg.body}</div>
+                                                <strong>{msg.from}: </strong> {checkForURL(msg.body) ?
+                                                <a href={msg.body} download>Download file</a> : msg.body} </div>
                                         </div>
                                 }
                             </div>

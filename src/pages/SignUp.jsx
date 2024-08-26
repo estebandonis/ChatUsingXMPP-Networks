@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 import { useNavigate } from 'react-router-dom';
 import {client, xml} from "@xmpp/client";
+import { Notification } from '../components';
 
 const domain = 'alumchat.lol';
 const service = 'ws://alumchat.lol:7070/ws/';
@@ -11,6 +12,15 @@ const SignUp = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [email, setEmail] = useState('');
+    const [notification, setNotification] = useState({ message: '', type: '' });
+
+    const showNotification = (message, type) => {
+        setNotification({ message, type });
+    };
+
+    const handleClose = () => {
+        setNotification({ message: '', type: '' });
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -30,8 +40,6 @@ const SignUp = () => {
             password: password,
         });
 
-
-
         xmppClient.on("open", () => {
             xmppClient.send(
                 xml(
@@ -50,6 +58,7 @@ const SignUp = () => {
 
         xmppClient.on('error', (err) => {
             console.error(err);
+            showNotification('Ocurrio un error al momento de registrar su usuario', 'error');
         })
 
         // Set up message handler
@@ -71,7 +80,10 @@ const SignUp = () => {
 
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <div className="flex items-center w-screen justify-center min-h-screen bg-gray-100">
+            {notification.message && (
+                <Notification message={notification.message} type={notification.type} onClose={handleClose} />
+            )}
             <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
                 <h2 className="text-2xl font-bold mb-6 text-center">Sign Up</h2>
                 <form onSubmit={handleSubmit}>
